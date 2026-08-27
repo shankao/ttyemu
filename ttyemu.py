@@ -243,6 +243,12 @@ class PygameFrontend:
     PASTE_DELAY_MS = 105
     FAST_PASTE_CHUNK = 256
     WHEEL_LINES = 3
+    PAPER_EDGE_WIDTH = 6
+    PAPER_BAND_LINES = 6
+    PAPER_PAGE_LINES = 66
+    PAPER_MARGIN_COLUMNS = 2
+    PAPER_HOLE_LINES = 3
+    PAPER_TOP_MARGIN_LINES = 2
 
     # pylint: disable=too-many-instance-attributes
     def __init__(self, target_surface=None, lines_per_page=8):
@@ -250,7 +256,10 @@ class PygameFrontend:
         pygame.init()
         self.font = self._findfont(22)
         self.font_width, self.font_height = self.font.size('X')
-        self.width_pixels = COLUMNS * self.font_width
+        self.paper_margin = self.PAPER_MARGIN_COLUMNS * self.font_width
+        self.paper_top_margin = self.PAPER_TOP_MARGIN_LINES * self.font_height
+        self.text_width_pixels = COLUMNS * self.font_width
+        self.width_pixels = self.text_width_pixels + 2*self.paper_margin
         if target_surface is None:
             pygame.display.set_caption('Terminal')
             dim = self.width_pixels, 22*self.font_height
@@ -289,6 +298,77 @@ class PygameFrontend:
                 pass
         return pygame.font.SysFont('Teleprinter,TELETYPE 1945-1985,monospace', fontsize)
 
+    def draw_paper(self, scroll_base):
+        "Draw a continuous paper roll at the current absolute position."
+        self.target_surface.fill(background_color())
+        width, height = self.target_surface.get_size()
+        paper_y = int(scroll_base * self.font_height)
+
+        # Fine horizontal fibers move with the paper rather than the window.
+        for spacing, offset, color in (
+                (17, 3, (0xf8, 0xe5, 0xd3)),
+                (29, 11, (0xff, 0xf2, 0xe5))):
+            first_y = (offset - paper_y) % spacing
+            for y_pos in range(first_y, height, spacing):
+                pygame.draw.line(self.target_surface, color, (0, y_pos), (width, y_pos))
+
+        # A faint pressure band every six lines suggests paper advancing over
+        # the platen while remaining continuous across scroll operations.
+        band_spacing = max(1, int(self.PAPER_BAND_LINES * self.font_height))
+        first_band = (-paper_y) % band_spacing
+        for y_pos in range(first_band, height, band_spacing):
+            pygame.draw.line(
+                self.target_surface, (0xf0, 0xd9, 0xc5),
+                (0, y_pos), (width, y_pos))
+
+        # Real continuous stationery is divided into sheets by a perforated
+        # tear line.  Anchor it to absolute terminal lines so it travels with
+        # the paper when the user scrolls.
+        page_spacing = max(1, int(self.PAPER_PAGE_LINES * self.font_height))
+        first_page = (-paper_y) % page_spacing
+        for y_pos in range(first_page, height, page_spacing):
+            if y_pos > 0:
+                pygame.draw.line(
+                    self.target_surface, (0xd9, 0xbe, 0xa6),
+                    (0, y_pos-1), (width, y_pos-1))
+            if y_pos + 1 < height:
+                pygame.draw.line(
+                    self.target_surface, (0xff, 0xf7, 0xee),
+                    (0, y_pos+1), (width, y_pos+1))
+            for x_pos in range(5, width, 12):
+                pygame.draw.circle(
+                    self.target_surface, (0xc9, 0xab, 0x92),
+                    (x_pos, y_pos), 1)
+
+        edge = self.PAPER_EDGE_WIDTH
+        pygame.draw.rect(self.target_surface, (0xe7, 0xcf, 0xbb), (0, 0, edge, height))
+        pygame.draw.rect(
+            self.target_surface, (0xe7, 0xcf, 0xbb),
+            (width-edge, 0, edge, height))
+        pygame.draw.line(self.target_surface, (0xd8, 0xbc, 0xa4), (edge, 0), (edge, height))
+        pygame.draw.line(
+            self.target_surface, (0xd8, 0xbc, 0xa4),
+            (width-edge-1, 0), (width-edge-1, height))
+
+        # Tractor-feed holes run along both margins on continuous stationery.
+        # Their positions use the same absolute paper offset as the fibers and
+        # page perforations, so they move with the paper during scrolling.
+        hole_spacing = max(1, int(self.PAPER_HOLE_LINES * self.font_height))
+        first_hole = (hole_spacing//2 - paper_y) % hole_spacing
+        hole_radius = max(2, min(4, self.paper_margin//5))
+        hole_x_positions = (self.paper_margin//2, width-self.paper_margin//2-1)
+        for y_pos in range(first_hole, height, hole_spacing):
+            for x_pos in hole_x_positions:
+                pygame.draw.circle(
+                    self.target_surface, (0xc6, 0xa8, 0x90),
+                    (x_pos, y_pos), hole_radius+1)
+                pygame.draw.circle(
+                    self.target_surface, (0x8f, 0x74, 0x61),
+                    (x_pos, y_pos), hole_radius)
+                pygame.draw.circle(
+                    self.target_surface, (0xf4, 0xdf, 0xcc),
+                    (x_pos-1, y_pos-1), max(1, hole_radius-1))
+
     def reinit(self, lines_per_page=None):
         "Clears and resets all terminal state"
         self.page_surfaces.clear()
@@ -297,7 +377,10 @@ class PygameFrontend:
 
     def lines_screen(self):
         "Returns the number of lines on the screen"
-        return self.target_surface.get_height() // self.font_height
+        return max(
+            1,
+            (self.target_surface.get_height() - self.paper_top_margin)
+            // self.font_height)
 
     #def alloc_line(self, line_number):
     #    "Bookkeeping to make sure the cursor line is valid after a linefeed"
@@ -310,8 +393,9 @@ class PygameFrontend:
     def alloc_page(self, i):
         "Returns the i'th page surface"
         while len(self.page_surfaces) <= i:
-            page_surface = pygame.Surface((self.width_pixels, self.lines_per_page*self.font_height))
-            page_surface.fill(background_color())
+            page_surface = pygame.Surface(
+                (self.width_pixels, self.lines_per_page*self.font_height),
+                pygame.SRCALPHA)
             self.page_surfaces.append(page_surface)
         return self.page_surfaces[i]
 
@@ -323,7 +407,9 @@ class PygameFrontend:
             return  # page is off top of screen
         if line0 > scroll_base + self.lines_screen():
             return  # page is off bottom of screen
-        dest = (0, self.font_height*(line0 - scroll_base))
+        dest = (
+            0,
+            self.paper_top_margin + self.font_height*(line0 - scroll_base))
         area = pygame.Rect(0, 0, self.width_pixels, self.lines_per_page*self.font_height)
         page_surface = self.page_surfaces[page_number]
         #print("blit page", page_number, dest, area)
@@ -332,15 +418,15 @@ class PygameFrontend:
     def draw_cursor(self, phys_line, column):
         "Draws the cursor"
         curs = pygame.Rect(
-            self.font_width*column,
-            self.font_height*phys_line,
+            self.paper_margin + self.font_width*column,
+            self.paper_top_margin + self.font_height*phys_line,
             self.font_width, self.font_height)
         pygame.draw.rect(self.target_surface, TEXT_COLOR, curs, 1)
 
     def refresh_screen(self, scroll_base, cursor_line, cursor_column):
         "Refreshes the screen"
         cursor_phys_line = cursor_line - scroll_base
-        self.target_surface.fill(background_color())
+        self.draw_paper(scroll_base)
         for i in range(len(self.page_surfaces)):
             self.blit_page_to_screen(i, scroll_base)
         self.draw_cursor(cursor_phys_line, cursor_column)
@@ -352,7 +438,10 @@ class PygameFrontend:
         text = self.font.render(char, True, TEXT_COLOR)
         page_number, page_line = divmod(line, self.lines_per_page)
         page_surface = self.alloc_page(page_number)
-        page_surface.blit(text, (self.font_width*column, self.font_height*page_line))
+        page_surface.blit(
+            text,
+            (self.paper_margin + self.font_width*column,
+             self.font_height*page_line))
 
     def postchars(self, chars):
         "Post message with characters to render."
