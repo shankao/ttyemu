@@ -242,6 +242,7 @@ class PygameFrontend:
     "Front-end using pygame for rendering"
     PASTE_DELAY_MS = 105
     FAST_PASTE_CHUNK = 256
+    WHEEL_LINES = 3
 
     # pylint: disable=too-many-instance-attributes
     def __init__(self, target_surface=None, lines_per_page=8):
@@ -426,6 +427,15 @@ class PygameFrontend:
             self.schedule_paste(
                 1 if self.terminal.backend.fast_mode else self.PASTE_DELAY_MS)
 
+    def handle_wheel(self, event):
+        "Scroll the paper with the mouse wheel."
+        if not event.y:
+            return
+        self.sounds.platen()
+        self.terminal.scroll_base -= event.y * self.WHEEL_LINES
+        self.terminal.constrain_scroll()
+        self.terminal.refresh_screen()
+
     def mainloop(self, terminal):
         "Run game loop"
         self.terminal = terminal
@@ -442,6 +452,8 @@ class PygameFrontend:
                 if event.type == pygame.KEYUP:
                     if event.key == pygame.K_F5:
                         self.terminal.backend.fast_mode = False
+                if event.type == pygame.MOUSEWHEEL:
+                    self.handle_wheel(event)
                 if event.type == pygame.VIDEORESIZE:
                     # Extremely finicky, but it seems to work
                     height = event.dict['size'][1]

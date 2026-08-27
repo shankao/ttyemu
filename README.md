@@ -18,7 +18,8 @@ Features:
 
 - Sound (with the pygame frontend)!  If it's too loud, hit F7 to close the lid.
 
-- Scrolling (with page up and down - tkinter frontend has a scrollbar)
+- Scrolling (with Page Up and Page Down; the Pygame frontend also supports the
+  mouse wheel, and the Tkinter frontend has a scrollbar)
 
 - Output a form feed to clear everything
 
