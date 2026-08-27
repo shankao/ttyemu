@@ -249,6 +249,9 @@ class PygameFrontend:
     PAPER_MARGIN_COLUMNS = 2
     PAPER_HOLE_LINES = 3
     PAPER_TOP_MARGIN_LINES = 2
+    PAPER_BREAK_MARGIN_LINES = 3
+    DISPLAY_LINES = 28
+    PAPER_BOTTOM_PREVIEW_LINES = 6
 
     # pylint: disable=too-many-instance-attributes
     def __init__(self, target_surface=None, lines_per_page=8):
@@ -262,7 +265,7 @@ class PygameFrontend:
         self.width_pixels = self.text_width_pixels + 2*self.paper_margin
         if target_surface is None:
             pygame.display.set_caption('Terminal')
-            dim = self.width_pixels, 22*self.font_height
+            dim = self.width_pixels, self.DISPLAY_LINES*self.font_height
             target_surface = pygame.display.set_mode(dim)  #, pygame.RESIZABLE)
             target_surface.fill(background_color())
             pygame.display.update()
@@ -326,7 +329,22 @@ class PygameFrontend:
         # the paper when the user scrolls.
         page_spacing = max(1, int(self.PAPER_PAGE_LINES * self.font_height))
         first_page = (-paper_y) % page_spacing
-        for y_pos in range(first_page, height, page_spacing):
+        break_margin = int(self.PAPER_BREAK_MARGIN_LINES * self.font_height)
+        for y_pos in range(first_page-page_spacing, height+break_margin, page_spacing):
+            # Slightly different paper tones make the bottom margin of the
+            # current sheet and top margin of the next one visible before the
+            # perforation itself reaches the viewport.
+            if y_pos > 0:
+                pygame.draw.rect(
+                    self.target_surface, (0xfa, 0xe9, 0xd9),
+                    (0, max(0, y_pos-break_margin),
+                     width, min(break_margin, y_pos)))
+            if y_pos < height:
+                margin_bottom = min(height, y_pos+break_margin)
+                pygame.draw.rect(
+                    self.target_surface, (0xff, 0xf2, 0xe6),
+                    (0, max(0, y_pos), width,
+                     max(0, margin_bottom-max(0, y_pos))))
             if y_pos > 0:
                 pygame.draw.line(
                     self.target_surface, (0xd9, 0xbe, 0xa6),
@@ -376,7 +394,13 @@ class PygameFrontend:
             self.lines_per_page = lines_per_page
 
     def lines_screen(self):
-        "Returns the number of lines on the screen"
+        "Returns the rows available to the cursor, above the paper preview."
+        return max(
+            1,
+            self.paper_lines_screen() - self.PAPER_BOTTOM_PREVIEW_LINES)
+
+    def paper_lines_screen(self):
+        "Returns all visible paper rows, including the bottom preview."
         return max(
             1,
             (self.target_surface.get_height() - self.paper_top_margin)
@@ -405,7 +429,7 @@ class PygameFrontend:
         line1 = (page_number + 1) * self.lines_per_page
         if line1 < scroll_base:
             return  # page is off top of screen
-        if line0 > scroll_base + self.lines_screen():
+        if line0 > scroll_base + self.paper_lines_screen():
             return  # page is off bottom of screen
         dest = (
             0,

@@ -19,7 +19,9 @@ Features:
 - Sound (with the pygame frontend)!  If it's too loud, hit F7 to close the lid.
 
 - Procedurally drawn continuous paper with printable side and top margins,
-  subtle fibers, tractor-feed holes, roll edges, and perforated page divisions.
+  subtle fibers, tractor-feed holes, roll edges, and advance shading around
+  perforated page divisions. A six-line bottom paper preview keeps an
+  approaching page division visible below the active typing line.
 
 - Scrolling (with Page Up and Page Down; the Pygame frontend also supports the
   mouse wheel, and the Tkinter frontend has a scrollbar)
