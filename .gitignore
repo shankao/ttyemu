@@ -1,2 +1,12 @@
-__pycache__
+__pycache__/
+*.py[cod]
 
+# Local environments and package installations
+.packaging-venv/
+.venv/
+venv/
+.local-pip-target/
+
+# PyInstaller output
+/build/
+/dist/
