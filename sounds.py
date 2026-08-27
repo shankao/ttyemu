@@ -29,8 +29,8 @@ class PygameSounds:
         pygame.mixer.pre_init(frequency=48000, size=-16, channels=2, buffer=512)
         # Load the sounds into a dict for easy access
         self.sounds = {}
-        # Start with the lid up (close the lid with F7 if you want peace and quiet)
-        self.lid_state = "up"
+        # Start with the lid down for quieter default operation; F7 toggles it.
+        self.lid_state = "down"
         # Channels for playback
         self.ch0 = None
         self.ch1 = None
