@@ -1,9 +1,15 @@
 Terminal emulator for ASR-33.
 
-This repository is a fork of [hughpyle/ttyemu](https://github.com/hughpyle/ttyemu).
-It adds current-Python compatibility through telnetlib3, improved Pygame
-rendering while scrolling across blank paper, clipboard paste support, and a
-PyInstaller recipe for building a standalone Linux executable.
+ttyemu was originally created by
+[Random832](https://github.com/Random832/ttyemu). Hugh Pyle subsequently
+maintained [a fork](https://github.com/hughpyle/ttyemu) that added sound,
+Telnet support, and other platform and usability improvements. This repository
+is based directly on Hugh Pyle's fork and retains work from both predecessors.
+
+Changes made in this fork include current-Python compatibility through
+telnetlib3, improved Pygame rendering and continuous-paper simulation,
+clipboard paste and mouse-wheel scrolling, and a PyInstaller recipe for
+building a standalone Linux executable.
 
 ![screenshot](screenshot.png)
 
@@ -16,7 +22,8 @@ Features:
 - Limits output to an authentic 10 characters per second. Hit F5 to make it go
   faster (toggle on tkinter frontend, hold on pygame)
 
-- Sound (with the pygame frontend)!  If it's too loud, hit F7 to close the lid.
+- Sound (with the pygame frontend)!  The lid starts closed for quieter
+  operation; hit F7 to open or close it.
 
 - Procedurally drawn continuous paper with printable side and top margins,
   subtle fibers, tractor-feed holes, roll edges, and advance shading around
@@ -46,8 +53,8 @@ Various bugs and to-dos:
   script.
 
 - Speed throttling (whether through the backend or throttle.py) does not work
-  well on Linux. It works on WSL, and the last time I checked this technique
-  worked on macOS. You'll still get the 10-chars-per-second output, but
+  well on Linux. It works on WSL and has also been reported to work on macOS.
+  You'll still get the 10-chars-per-second output, but
   interrupting long outputs won't work.
 
 - Most of the fun termios functions (echoprt, echok, kill, reprint, discard)
@@ -63,5 +70,5 @@ Various bugs and to-dos:
 - Simulate classical 'stty lcase' line discipline for input of upper/lowercase
   letters and `` `{|}~`` (part or all of this are broken in modern OSes)
 
-- Discard and regenerate scrollback to limit memory usage. The AbstractLine
-  class I created should be useful for this, but nothing is hooked up.
+- Discard and regenerate scrollback to limit memory usage. The existing
+  AbstractLine class should be useful for this, but nothing is hooked up.
