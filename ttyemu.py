@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 "ASR-33 terminal emulator"
 import sys
+import asyncio
 import time
 import threading
 import tkinter
@@ -10,7 +11,8 @@ import subprocess
 import logging
 import os
 import shlex
-from telnetlib import Telnet, IAC, WILL, WONT, DO, DONT, SB, SE, BINARY, ECHO, TTYPE, TSPEED, NAWS
+import telnetlib3
+
 try:
     import pty
     import termios
@@ -593,6 +595,7 @@ class TelnetBackend:
     def __init__(self, host, port=23, postchars=lambda chars: None):
         self.fast_mode = False
         self.conn = None
+        self.loop = None
         self.postchars = postchars
         self.host = host
         self.port = port
@@ -601,60 +604,40 @@ class TelnetBackend:
     def write_char(self, char):
         "Sends a keyboard character to the host"
         if self.conn is not None:
-            self.conn.write(char.encode())
+            self.loop.call_soon_threadsafe(self.conn.write, char)
         else:
             self.postchars(char)
 
     def thread_target(self):
         "Method for thread setup"
-        def telnet_callback(sock, cmd, opt):
-            if cmd == SE:
-                sbdata = self.conn.read_sb_data()
-                logger.info("SE: %s", sbdata)
-                if sbdata == TSPEED + ECHO:
-                    sock.sendall(IAC + SB + TSPEED + BINARY + b'110,110' + IAC + SE)
-                elif sbdata == TTYPE + ECHO:
-                    sock.sendall(IAC + SB + TTYPE + BINARY + b'tty33' + IAC + SE)
-            if cmd in (DO, DONT):
-                if opt in [TTYPE, TSPEED, NAWS]:
-                    logger.info("IAC WILL %s", ord(opt))
-                    sock.sendall(IAC + WILL + opt)
-                    if opt == NAWS:
-                        self.will_naws = 1
-                else:
-                    logger.debug("IAC WONT %s", ord(opt))
-                    sock.sendall(IAC + WONT + opt)
-            elif cmd in (WILL, WONT):
-                if opt in [TTYPE, TSPEED, NAWS]:
-                    logger.info("IAC DO %s", ord(opt))
-                    sock.sendall(IAC + DO + opt)
-                else:
-                    logger.debug("IAC DONT %s", ord(opt))
-                    sock.sendall(IAC + DONT + opt)
+        asyncio.run(self.telnet_session())
 
-        self.conn = Telnet(host=self.host, port=self.port)
-        self.conn.set_option_negotiation_callback(telnet_callback)
-        while True:
-            try:
-                data = self.conn.read_eager()
-            except (EOFError, ConnectionResetError):
-                break
-            time_now = int(time.time())
-            if self.will_naws and time_now > self.will_naws + 30:
-                self.will_naws = time_now
-                self.conn.sock.sendall(IAC + SB + NAWS + bytes([0, 72, 0, 24]) + IAC + SE)
-            if not data:
-                continue
-            logger.info("%d bytes", len(data))
-            for datum in data:
-                try:
-                    self.postchars(bytes([datum]).decode('ascii', 'replace'))
-                except pygame.error:
-                    logger.error("ERR '%c'", datum)
+    def close(self):
+        "Closes the telnet connection from the frontend thread."
+        if self.conn is not None and self.loop is not None:
+            self.loop.call_soon_threadsafe(self.conn.close)
+
+    async def telnet_session(self):
+        "Run the telnetlib3 client session."
+        self.loop = asyncio.get_running_loop()
+        reader, self.conn = await telnetlib3.open_connection(
+            host=self.host, port=self.port, encoding='ascii',
+            encoding_errors='replace', term='tty33', cols=COLUMNS, rows=24,
+            tspeed=(110, 110))
+        try:
+            while True:
+                data = await reader.read(1024 if self.fast_mode else 1)
+                if not data:
+                    break
+                logger.info("%d bytes", len(data))
+                self.postchars(data)
                 if not self.fast_mode:
-                    time.sleep(0.105)
-        self.conn = None
-        self.postchars("Disconnected. Local mode.\r\n")
+                    await asyncio.sleep(0.105)
+        finally:
+            self.conn.close()
+            self.conn = None
+            self.loop = None
+            self.postchars("Disconnected. Local mode.\r\n")
 
 
 class FiledescBackend(abc.ABC):
