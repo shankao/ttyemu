@@ -1,5 +1,10 @@
 Terminal emulator for ASR-33.
 
+This repository is a fork of [hughpyle/ttyemu](https://github.com/hughpyle/ttyemu).
+It adds current-Python compatibility through telnetlib3, improved Pygame
+rendering while scrolling across blank paper, clipboard paste support, and a
+PyInstaller recipe for building a standalone Linux executable.
+
 ![screenshot](screenshot.png)
 
 Features:
@@ -16,6 +21,18 @@ Features:
 - Scrolling (with page up and down - tkinter frontend has a scrollbar)
 
 - Output a form feed to clear everything
+
+- Paste clipboard text with Ctrl+Shift+V or Shift+Insert. Pasted input is sent
+  at the emulated terminal speed; hold F5 to paste without the added delay.
+
+Standalone Linux executable
+---------------------------
+
+Create and activate an isolated virtual environment, install the packages in
+``requirements-build.txt``, then run ``pyinstaller ttyemu.spec``. The one-file
+console executable is written to ``dist/ttyemu`` and can be launched from any
+working directory. It still starts the original Pygame frontend with a local
+``sh`` connected through the PTY backend.
 
 Various bugs and to-dos:
 
