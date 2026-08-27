@@ -7,6 +7,7 @@ import threading
 import tkinter
 import tkinter.font
 import abc
+from collections import deque
 import subprocess
 import logging
 import os
@@ -238,6 +239,9 @@ class TkinterFrontend:
 
 class PygameFrontend:
     "Front-end using pygame for rendering"
+    PASTE_DELAY_MS = 105
+    FAST_PASTE_CHUNK = 256
+
     # pylint: disable=too-many-instance-attributes
     def __init__(self, target_surface=None, lines_per_page=8):
         self.sounds = PygameSounds()
@@ -255,7 +259,15 @@ class PygameFrontend:
         self.target_surface = target_surface
         self.lines_per_page = lines_per_page
         self.char_event_num = pygame.USEREVENT+1
+        self.paste_event_num = pygame.USEREVENT+6
+        self.paste_chars = deque()
         self.terminal = None
+        self.scrap_text_api = hasattr(pygame.scrap, 'get_text')
+        if not self.scrap_text_api:
+            try:
+                pygame.scrap.init()
+            except pygame.error:
+                logger.warning("Clipboard support is unavailable.")
 
     def _findfont(self, fontsize):
         # pygame SysFont doesn't help on Windows, so look for specific files in known locations
@@ -346,12 +358,26 @@ class PygameFrontend:
 
     def handle_key(self, event):
         "Handle a keyboard event"
-        if event.unicode:
+        paste_shortcut = (
+            event.key == pygame.K_v
+            and event.mod & pygame.KMOD_CTRL
+            and event.mod & pygame.KMOD_SHIFT)
+        paste_shortcut |= (
+            event.key == pygame.K_INSERT
+            and event.mod & pygame.KMOD_SHIFT)
+        if paste_shortcut:
+            self.paste()
+        elif event.key == pygame.K_F5:
+            self.terminal.backend.fast_mode = True
+            if self.paste_chars:
+                self.schedule_paste(1)
+        elif self.paste_chars:
+            # Keep an active paste contiguous and deterministic.
+            return
+        elif event.unicode:
             self.sounds.keypress(event.unicode)
             self.terminal.backend.write_char(event.unicode)
             pygame.display.update()
-        elif event.key == pygame.K_F5:
-            self.terminal.backend.fast_mode = True
         elif event.key == pygame.K_F7:
             self.sounds.lid()
         elif event.key == pygame.K_PAGEUP:
@@ -363,6 +389,41 @@ class PygameFrontend:
         else:
             pass
             #print(event)
+
+    def paste(self):
+        "Queue 7-bit ASCII clipboard text for paced input."
+        if self.paste_chars:
+            return
+        try:
+            if self.scrap_text_api:
+                text = pygame.scrap.get_text()
+            else:
+                data = pygame.scrap.get(pygame.SCRAP_TEXT)
+                text = data.rstrip(b'\0').decode('ascii', 'ignore') if data else ''
+        except pygame.error:
+            logger.warning("Could not read the clipboard.")
+            return
+        if not text:
+            return
+        text = text.rstrip('\0').encode('ascii', 'ignore').decode('ascii')
+        text = text.replace('\r\n', '\n').replace('\n', '\r')
+        self.paste_chars.extend(text)
+        if self.paste_chars:
+            self.schedule_paste(
+                1 if self.terminal.backend.fast_mode else self.PASTE_DELAY_MS)
+
+    def schedule_paste(self, delay):
+        "Schedule the next batch of pasted characters."
+        pygame.time.set_timer(self.paste_event_num, delay, loops=1)
+
+    def send_paste(self):
+        "Send a paced character, or a bounded fast-mode batch."
+        count = self.FAST_PASTE_CHUNK if self.terminal.backend.fast_mode else 1
+        for _ in range(min(count, len(self.paste_chars))):
+            self.terminal.backend.write_char(self.paste_chars.popleft())
+        if self.paste_chars:
+            self.schedule_paste(
+                1 if self.terminal.backend.fast_mode else self.PASTE_DELAY_MS)
 
     def mainloop(self, terminal):
         "Run game loop"
@@ -391,6 +452,8 @@ class PygameFrontend:
                 if event.type == self.char_event_num:
                     self.terminal.output_chars(event.chars)
                     self.sounds.print_chars(event.chars)
+                if event.type == self.paste_event_num:
+                    self.send_paste()
                 if event.type in self.sounds.EVENTS:
                     # Sound events notify that playback is ended on a sound or channel
                     self.sounds.event(event.type)
