@@ -326,6 +326,7 @@ class PygameFrontend:
     def refresh_screen(self, scroll_base, cursor_line, cursor_column):
         "Refreshes the screen"
         cursor_phys_line = cursor_line - scroll_base
+        self.target_surface.fill(background_color())
         for i in range(len(self.page_surfaces)):
             self.blit_page_to_screen(i, scroll_base)
         self.draw_cursor(cursor_phys_line, cursor_column)
