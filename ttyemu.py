@@ -11,6 +11,7 @@ from collections import deque
 import subprocess
 import logging
 import os
+import signal
 import shlex
 import telnetlib3
 
@@ -435,7 +436,7 @@ class PygameFrontend:
                     self.sounds.stop()
                     pygame.mixer.quit()
                     pygame.quit()
-                    sys.exit()
+                    return
                 if event.type == pygame.KEYDOWN:
                     self.handle_key(event)
                 if event.type == pygame.KEYUP:
@@ -795,6 +796,7 @@ class PtyBackend(FiledescBackend):
     def __init__(self, cmd, shell=False, **kwargs):
         super().__init__(**kwargs)
         self.cmd = cmd
+        self.child_pid = None
         if type(cmd) is str:
             if shell:
                 self.args = ['sh', '-c', cmd]
@@ -807,6 +809,7 @@ class PtyBackend(FiledescBackend):
         "Starts the process and hooks up the file descriptors"
         pid, master = pty.fork()
         if pid:
+            self.child_pid = pid
             self.write_fd = self.read_fd = master
         else:
             try:
@@ -830,6 +833,20 @@ class PtyBackend(FiledescBackend):
         "Closes the file descriptor"
         os.close(self.read_fd)
         self.read_fd = self.write_fd = None
+        if self.child_pid is not None:
+            try:
+                os.waitpid(self.child_pid, 0)
+            except ChildProcessError:
+                pass
+            self.child_pid = None
+
+    def close(self):
+        "Stops the subprocess attached to the pseudo-terminal."
+        if self.child_pid is not None:
+            try:
+                os.killpg(self.child_pid, signal.SIGHUP)
+            except ProcessLookupError:
+                pass
 
 
 def main(frontend, backend):
@@ -838,7 +855,13 @@ def main(frontend, backend):
     backend.postchars = frontend.postchars
     backend_thread = threading.Thread(target=backend.thread_target)
     backend_thread.start()
-    frontend.mainloop(my_term)
+    try:
+        frontend.mainloop(my_term)
+    finally:
+        close = getattr(backend, 'close', None)
+        if close is not None:
+            close()
+        backend_thread.join()
 
 
 main(PygameFrontend(), PtyBackend('sh'))
