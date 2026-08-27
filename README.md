@@ -49,10 +49,9 @@ working directory. It still starts the original Pygame frontend with a local
 
 - No user interface to select between frontends and backends. For now, edit the
   script.
-- Speed throttling (whether through the backend or `throttle.py`) does not work
-  well on Linux. It works on WSL and has also been reported to work on macOS.
-  You'll still get the 10-characters-per-second output, but interrupting long
-  output won't work.
+- Output is paced at the emulated Model 33 rate. On local PTY backends, Ctrl-C
+  reaches the child process promptly, but output already buffered by the PTY
+  may continue printing afterward. Hold F5 to drain buffered output quickly.
 - Most of the interesting termios functions (`echoprt`, `echok`, `kill`,
   `reprint`, and `discard`) don't work on WSL.
 - Add TTY-37 support (half lines, reverse line feed, and lowercase). For now,
